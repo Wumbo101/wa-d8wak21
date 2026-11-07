@@ -411,6 +411,8 @@ function ddCard(p,built){if(!p)return "";var o=insight(p),c=o.lean==="Strong"?"g
   return h+'</div>';}
 function ddHtml(pi,l){var k=l[0]+"|"+l[1]+"|"+l[2],d=(CFG.deep||{})[k];if(!d)return "";var id=pi+":"+k,op=S.dd[id];
   return '<div class="ddw"><button class="itg dd'+(op?' on':'')+'" data-dd="'+esc(id)+'">'+((d.lean=(byKey[k]?insight(byKey[k]).lean:null))?'<em class="tag ln c-'+(d.lean==="Strong"?"g":d.lean==="Lean"?"m":"b")+'">'+esc(d.lean)+'</em>':'')+'<span>Deep dive '+(op?'▴':'▾')+'</span></button>'+(op?'<div class="ins ddb">'+(byKey[k]?ddCard(byKey[k],d.built):(d.paras||[]).map(function(x){return '<p>'+esc(x)+'</p>';}).join(""))+'</div>':'')+'</div>';}
+/* Pipeline publishes parlay why as either one string or an array of lines. */
+function textLines(w){if(w==null||w==="")return [];var src=Array.isArray(w)?w:[w],out=[];src.forEach(function(x){if(x==null||x==="")return;String(x).split(/\n+/).forEach(function(line){var t=line.trim();if(t)out.push(t);});});return out;}
 function renderParlays(){
   var pls=(CFG.parlays||[]).filter(function(p){return p&&p.legs&&p.legs.length;}), el=document.getElementById("s-parlays");
   if(!pls.length){el.innerHTML='<div class="sec-h"><h2>Tonight\'s parlays</h2></div><div class="panel empty">No parlays tonight.</div>';return;}
@@ -422,7 +424,7 @@ function renderParlays(){
     h+='<article class="pl"><div class="pl-top"><div><div class="eyebrow">'+esc(pl.name||"")+' · '+(pl.legs.length===1?'straight bet':pl.legs.length+'-leg parlay')+'</div><div class="pl-odds num">'+(am?fmtOdds(am):"")+'</div></div>'+pay+'</div><ul class="legs">';
     pl.legs.forEach(function(l,j){if(l[1]==='spread'||l[1]==='ml'||l[1]==='total'){h+='<li><div class="leg" style="cursor:default"><span class="nm"><b>'+esc(l[1]==='total'?l[3]+' '+l[2]:l[3]+' '+(l[1]==='ml'?'moneyline':(l[2]>0?'+':'')+l[2]))+'</b><span class="num">'+esc(l[0])+' · '+(l[1]==='ml'?'Moneyline':l[1]==='total'?'Game total':'Spread')+' · '+fmtOdds(l[4])+'</span></span></div></li>';return;}var p=legs[j];var sub=[esc(p?propLabel(p):l[2]+"+ "+mkName(l[1]))];if(p){sub.push(fmtOdds(p.odds));sub.push("H2H "+rec(p.h2a));}
       h+='<li><button class="leg" '+(p?'data-p="'+p.i+'"':'disabled')+'>'+av(l[0],"sm")+'<span class="nm"><b>'+esc(l[0])+statusTag(l[0])+'</b><span class="num">'+sub.join(" · ")+'</span></span>'+(p?hitBlock(p.hit):"")+'</button>'+ddHtml(pi,l)+'</li>';});
-    h+='</ul>'+((pl.why||[]).length?'<div class="ins" style="margin:8px 0;font-size:13px">'+pl.why.map(function(x){return '<p>'+esc(x)+'</p>';}).join('')+'</div>':'')+'<button class="plbtn" data-load="'+pi+'">Load into bet slip · est. all-hit '+(estAll(legs)*100).toFixed(0)+'%</button></article>';
+    var why=textLines(pl.why);h+='</ul>'+(why.length?'<div class="ins" style="margin:8px 0;font-size:13px">'+why.map(function(x){return '<p>'+esc(x)+'</p>';}).join('')+'</div>':'')+'<button class="plbtn" data-load="'+pi+'">Load into bet slip · est. all-hit '+(estAll(legs)*100).toFixed(0)+'%</button></article>';
   });
   el.innerHTML=h+'</div>';
 }
@@ -841,7 +843,8 @@ document.addEventListener("input",function(e){if(e.target.id==="q"){S.q=e.target
 ov.addEventListener("click",closeSheet);document.getElementById("x").addEventListener("click",closeSheet);
 document.addEventListener("keydown",function(e){if(e.key==="Escape")closeSheet();});
 (function(){var y0=null;sheet.addEventListener("touchstart",function(e){y0=sb.scrollTop<=0?e.touches[0].clientY:null;},{passive:true});sheet.addEventListener("touchend",function(e){if(y0!==null&&e.changedTouches[0].clientY-y0>80)closeSheet();y0=null;},{passive:true});})();
-renderParlays();renderLive();renderProps();renderInj();renderRanks();renderRec();renderSlip();
+function paint(id,fn){try{fn();}catch(err){console.error(err);var el=document.getElementById(id);if(el&&!el.childElementCount)el.innerHTML='<div class="panel empty">This section could not be drawn.</div>';}}
+paint("s-parlays",renderParlays);paint("s-live",renderLive);paint("s-props",renderProps);paint("s-inj",renderInj);paint("s-ranks",renderRanks);paint("s-rec",renderRec);paint("slip",renderSlip);
 })();
 
 </script>
