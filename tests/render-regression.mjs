@@ -46,12 +46,10 @@ function srcHasWhyMap(file) {
 
 function whyFixture(which) {
   let html = fs.readFileSync(path.join(root, which), "utf8");
-  const flag300 = html.match(/"why":"R17 v3c L5 FLAG: \+300[^"]*"/);
-  const flag200 = html.match(/"why":"R17 v3c L5 FLAG: \+200[^"]*"/);
-  if (!flag300 || !flag200) throw new Error("flag why strings missing in " + which);
-  html = html.split(flag300[0]).join('"why":["array line one","array line two"]');
-  html = html.split(flag200[0]).join('"why":null');
-  return html;
+  const needle = '"parlays":[]';
+  if (!html.includes(needle)) throw new Error("expected empty parlays in " + which);
+  const injected = '"parlays":[{"name":"+300","am":210,"legs":[["Synth","PTS",10]],"why":["array line one","array line two"]},{"name":"+200","am":100,"legs":[["Synth","PTS",10]],"why":null}]';
+  return html.replace(needle, injected);
 }
 
 function serve() {
@@ -177,8 +175,10 @@ async function checkPage(port, page) {
     blank: (document.body.innerText||"").length < 80,
     fail: document.body.innerText.includes("could not be drawn"),
     parlays: document.querySelectorAll("#s-parlays article.pl").length,
-    why: [...document.querySelectorAll("#s-parlays article.pl .ins p")].map(p => p.textContent),
-    names: [...document.querySelectorAll("#s-parlays .eyebrow")].map(e => e.textContent),
+    slip: document.querySelectorAll("#s-parlays [data-load]").length,
+    board: document.querySelector("#s-parlays").innerText,
+    nov6hist: DATA.hist.filter(e => e.date==="2026-11-06").length,
+    parlayN: (DATA.cfg.parlays||[]).length,
     live: document.querySelector("#s-live").innerText,
     props: document.querySelector("#s-props").innerText.length,
     inj: document.querySelector("#s-inj").innerText.length,
@@ -196,12 +196,16 @@ async function checkPage(port, page) {
   assert(!s.blank, page + " is not blank");
   assert(!s.fail, page + " has no section failure");
   assert(cdp.errors.length === 0, page + " has no console exceptions (" + cdp.errors.length + ")");
-  assert(s.parlays === 2, page + " shows 2 pregame parlays");
-  assert(s.why.some(t => t.includes("+300") && t.includes("210")), page + " shows +300 flag copy");
-  assert(s.why.some(t => t.includes("+200") && t.includes("-327")), page + " shows +200 flag copy");
+  assert(s.parlays === 0 && s.slip === 0 && s.parlayN === 0 && s.nov6hist === 0, page + " has no Nov 6 pregame cards");
+  assert(s.board.includes("No pregame parlays posted tonight"), page + " says no pregame posted");
+  assert(s.board.includes("FLAG +300") && s.board.includes("+210") && s.board.includes("NOT posted"), page + " shows +300 flag");
+  assert(s.board.includes("FLAG +200") && s.board.includes("327") && s.board.includes("NOT posted"), page + " shows +200 flag");
+  assert(s.board.includes("NO compliant") && s.board.includes("2-Leg"), page + " shows Straight and 2-Leg left out");
+  assert(!s.board.includes("2026-11-06"), page + " parlays board has no Nov 6 history row");
   assert(s.live.includes("MIN") && s.live.includes("Under 232.5") && s.live.includes("+169") && s.live.includes("9:04 PM"), page + " shows MIN live ticket");
   assert(s.liveId === "L1106-210446-MIN-NO" && s.livePrice === 169, page + " live payload unchanged");
-  assert(s.hist === 23 && s.props > 100 && s.inj > 20 && s.ranks > 20, page + " props, injuries, ranks, and history render");
+  assert(s.hist === 21 && s.pending === 0 && s.won === 8 && s.lost === 13, page + " history is 21 graded, no pending pregame");
+  assert(s.props > 100 && s.inj > 20 && s.ranks > 20, page + " props, injuries, and ranks render");
   assert(s.recCards === 4 && s.recPage.includes("Page 1 of 6"), page + " record is 4 per page");
 
   await evalJson(cdp, `document.querySelector('#tabs [data-t="parlays"]').click(); document.querySelector('#s-parlays').scrollIntoView()`);
@@ -211,20 +215,23 @@ async function checkPage(port, page) {
     document.querySelector('#tabs [data-t="rec"]').click();
     window.REC_PG = 0; renderRec();
     const got = [];
+    const dates = [];
     const pages = Math.ceil(DATA.hist.length / 4);
     for (let i = 0; i < pages; i++) {
       window.REC_PG = i; renderRec();
-      document.querySelectorAll("#s-rec details.rp").forEach(d => got.push(d.querySelector(".res").textContent));
+      document.querySelectorAll("#s-rec details.rp").forEach(d => { got.push(d.querySelector(".res").textContent); dates.push(d.innerText.slice(0, 10)); });
     }
     window.REC_PG = 0; renderRec();
     const expect = {};
     DATA.hist.forEach(e => { expect[e.result] = (expect[e.result] || 0) + 1; });
     const seen = {};
     got.forEach(r => { const k = r.toLowerCase(); seen[k] = (seen[k] || 0) + 1; });
-    return JSON.stringify({ n: got.length, expect, seen, page: document.querySelector("#s-rec .recpgi").textContent, cards: document.querySelectorAll("#s-rec details.rp").length });
+    return JSON.stringify({ n: got.length, expect, seen, dates, page: document.querySelector("#s-rec .recpgi").textContent, cards: document.querySelectorAll("#s-rec details.rp").length });
   })()`);
   const g = JSON.parse(grades);
-  assert(g.n === 23 && g.cards === 4 && g.page === "Page 1 of 6", page + " record pager resets to 4 cards");
+  assert(g.n === 21 && g.cards === 4 && g.page === "Page 1 of 6", page + " record pager resets to 4 cards");
+  assert(!g.seen.pending, page + " record counts no pending pregame");
+  assert(!g.dates.includes("2026-11-06"), page + " record has no Nov 6 pregame row");
   for (const key of Object.keys(g.expect)) {
     assert(g.seen[key] === g.expect[key], page + " grade " + key + " " + g.seen[key] + " vs " + g.expect[key]);
   }
@@ -257,7 +264,7 @@ async function checkPage(port, page) {
   })()`);
   const w = JSON.parse(walked);
   assert(w.seen.length === 6, page + " record has 6 pages");
-  assert(w.seen.every((row, i) => row.startsWith("Page " + (i + 1) + " of 6#") && (i < 5 ? row.endsWith("#4") : row.endsWith("#3"))), page + " pages are 4,4,4,4,4,3");
+  assert(w.seen.every((row, i) => row.startsWith("Page " + (i + 1) + " of 6#") && (i < 5 ? row.endsWith("#4") : row.endsWith("#1"))), page + " pages are 4,4,4,4,4,1");
   await evalJson(cdp, `window.REC_PG=0; renderRec();`);
   await shot(cdp, page.includes("full") ? "full-record-p1.png" : "index-record-p1.png");
   await evalJson(cdp, `window.REC_PG=1; renderRec();`);
@@ -270,8 +277,8 @@ async function checkPage(port, page) {
     await cdp.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
     await evalJson(cdp, `document.querySelector('#tabs [data-t="parlays"]').click()`);
     await new Promise((r) => setTimeout(r, 200));
-    const mobile = await evalJson(cdp, `document.querySelectorAll("#s-parlays article.pl").length + ":" + document.body.dataset.tab`);
-    assert(mobile === "2:parlays", "index mobile still shows parlays");
+    const mobile = await evalJson(cdp, `document.querySelectorAll("#s-parlays article.pl").length + ":" + document.body.dataset.tab + ":" + document.querySelector("#s-parlays").innerText.includes("NOT posted")`);
+    assert(mobile === "0:parlays:true", "index mobile shows the no-post flags, not tickets");
     await shot(cdp, "index-mobile-parlays.png");
   }
   await closePage(opened);
